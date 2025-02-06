@@ -1,0 +1,381 @@
+---
+title: "Blackbox methods, KNN"
+author: "Alphonsinah Ototo"
+date: "2024-10-30"
+output:
+  html_document:
+    number_sections: true
+    toc: true
+    fig_width: 15
+    fig_height: 10
+  pdf_document:
+    toc: true
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(error = TRUE)
+```
+
+## Task 1
+   - Package load, data import, inspection, and partitioning
+
+
+```{r load libraries,import, inspect and partition data}
+# Load required packages
+library(knitr)
+library(psych)
+library(rpart)
+library(RWeka)
+library(caret)
+library(rminer)
+library(matrixStats)
+library(kernlab)
+
+# Set working directory
+mydir <- getwd()
+setwd(mydir)
+
+# Load the data set
+data <- read.csv("C:/Users/User/Downloads/NA_sales_filtered.csv", stringsAsFactors = TRUE)
+
+# Exclude the Name column
+data <- data[, -which(names(data) == "Name")]
+
+# Convert character columns to factors
+data[sapply(data, is.character)] <- lapply(data[sapply(data, is.character)], as.factor)
+
+# Set up cv parameters
+
+df <- data
+target <- 7
+seedVal <- 500
+metrics_list <- c("MAE","RMSE","MAPE","RMSPE")
+
+# Partition dataset into 70% training and 30% testing sets
+set.seed(500)
+inTrain <- createDataPartition(y=data$NA_Sales, p = 0.70, list=FALSE)
+train_target <- data[inTrain,7]
+test_target <- data[-inTrain,7]
+train_input <- data[inTrain,-7]
+test_input <- data[-inTrain,-7]
+
+mean(train_target)
+mean(test_target)
+
+histogram(train_target)
+histogram(test_target)
+```
+
+```{r data structure and summary}
+# Show structure and summary
+str(data)
+summary(data)
+
+```
+
+## Task  2.
+
+  - Build and evaluate neural network models for numeric prediction tasks
+
+```{r MLP model}
+# Set Java environment
+Sys.setenv(JAVA_HOME = "C:\\Users\\User\\Downloads\\openjdk-23.0.1_windows-x64_bin\\jdk-23.0.1")
+
+# Load required libraries
+library(rJava)
+library(RWeka)  # Ensure RWeka is loaded for Weka classifiers
+
+# Initialize Java
+.jinit()
+
+# Create a MultilayerPerceptron classifier
+MLP <- make_Weka_classifier("weka.classifiers.functions.MultilayerPerceptron")
+
+# Train and evaluate the default MLP model
+mlp_def <- MLP(NA_Sales ~ ., data = train_input)
+train_pred_def <- predict(mlp_def, train_input)
+test_pred_def <- predict(mlp_def, test_input)
+
+
+summary(train_pred_def)
+summary(test_pred_def)
+
+# performance of predictions on testing & training data
+mmetric(test_target,test_pred_def ,metrics_list)
+mmetric(train_target,train_pred_def ,metrics_list)
+
+# Train and evaluate MLP model with adjusted parameters 
+mlp_adjusted <- MLP(NA_Sales ~ ., data = train_input, control = Weka_control(H = "3,2", L = 0.3))
+
+train_pred_adjusted <- predict(mlp_adjusted, train_input)
+test_pred_adjusted <- predict(mlp_adjusted, test_input)
+
+summary(train_pred_adjusted)
+summary(test_pred_adjusted)
+
+# performance of adjusted predictions on testing & training data
+mmetric(test_target,test_pred_adjusted ,metrics_list)
+mmetric(train_target,train_pred_adjusted ,metrics_list)
+
+
+```
+
+## Task 3.
+
+   - Build and evaluate SVM (ksvm) models for numeric prediction tasks
+   
+```{r svm(ksvm) models }
+
+library(kernlab)
+
+# Build a model using ksvm’s default setting
+svm_default <- ksvm(NA_Sales ~ ., data = train_input)
+
+# Predictions and performance for the default model
+k.train_pred_default <- predict(svm_default, train_input)
+k.test_pred_default <- predict(svm_default, test_input)
+
+
+summary(k.train_pred_default)
+summary(k.test_pred_default)
+
+# performance of adjusted predictions on testing & training data
+mmetric(test_target,k.test_pred_default,metrics_list)
+mmetric(train_target,k.train_pred_default ,metrics_list)
+
+# Build the ksvm model with a polynomial kernel
+ksvm_rfbt <- ksvm(NA_Sales ~ ., data = train_input, kernel ="rbfdot")
+
+# Predict on training and testing sets
+train_pred_rfbt <- predict(ksvm_rfbt, train_input)
+test_pred_rfbt<- predict(ksvm_rfbt, test_input)
+
+# Evaluate performance
+ mmetric(train_target, train_pred_rfbt, metrics_list)
+ mmetric(test_target, test_pred_rfbt, metrics_list)
+  
+
+# Build the ksvm model with a higher cost value (C = 10)
+ksvm_C <- ksvm(NA_Sales ~ ., data = train_input, kernel = "rbfdot", C = 10)
+
+# Predict on training and testing sets
+train_pred_C <- predict(ksvm_C, train_input)
+test_pred_C <- predict(ksvm_C, test_input)
+
+# Evaluate performance
+mmetric(train_target, train_pred_C, metrics_list)
+mmetric(test_target, test_pred_C, metrics_list)
+
+```
+
+## Task 4
+
+   -  Build and evaluate KNN (IBk) models for numeric prediction tasks
+   
+```{r KNN (IBK) models}
+
+ library(RWeka)
+
+# Build a model using IBk's default setting (k=1)
+ibk_default <- IBk(NA_Sales ~ ., data = train_input)
+
+# Predictions for training and testing sets
+ibk_train_pred_default <- predict(ibk_default, train_input)
+ibk_test_pred_default <- predict(ibk_default, test_input)
+
+# Evaluate performance
+summary(ibk_train_pred_default)
+summary(ibk_test_pred_default)
+
+# Evaluate using metrics
+mmetric(train_target, ibk_train_pred_default, metrics_list)
+mmetric(test_target, ibk_test_pred_default, metrics_list)
+
+
+# IBk model with k=5
+ibk_k5 <- IBk(NA_Sales ~ ., data = train_input, control = Weka_control(K = 5))
+
+# Predictions for training and testing sets
+train_pred_k5 <- predict(ibk_k5, train_input)
+test_pred_k5 <- predict(ibk_k5, test_input)
+
+# Evaluate performance
+summary(train_pred_k5)
+summary(test_pred_k5)
+
+# Evaluate using metrics
+mmetric(train_target, train_pred_k5, metrics_list)
+mmetric(test_target, test_pred_k5, metrics_list)
+
+# IBk model using weighted voting (I = TRUE)
+ibk_weighted <- IBk(NA_Sales ~ ., data = train_input, control = Weka_control(I = TRUE))
+
+# Predictions for training and testing sets
+train_pred_weighted <- predict(ibk_weighted, train_input)
+test_pred_weighted <- predict(ibk_weighted, test_input)
+
+# Evaluate performance
+summary(train_pred_weighted)
+summary(test_pred_weighted)
+
+# Evaluate using metrics
+mmetric(train_target, train_pred_weighted, metrics_list)
+mmetric(test_target, test_pred_weighted, metrics_list)
+```
+  
+
+## Task 5
+
+   - Cross-validation function for numeric prediction models
+
+   
+
+```{r cross validation for the prediction models}
+
+## Define parameters
+df <- data
+target <- "NA_Sales"  
+nFolds <- 5
+seedVal <- 500
+metrics_list <- c("MAE", "RMSE", "MAPE", "RMSPE", "RAE", "RRSE", "R2")
+
+# Define the cross-validation function
+cv_function <- function(df, target, nFolds, seedVal, model_func, metrics_list) {
+  
+  set.seed(seedVal)
+  folds <- createFolds(df[[target]], nFolds, returnTrain = FALSE)
+  
+  # Perform cross-validation
+  cv_results <- lapply(folds, function(test_idx) {
+   
+    train_data <- df[-test_idx, ]
+    test_data <- df[test_idx, ]
+    
+    # Train the model using the specified method
+    prediction_model <- prediction_method(as.formula(paste(target, "~ .")), data = train_data)
+    
+    # Generate predictions on the test set
+    pred <- predict(prediction_model, newdata = test_data)
+    
+    # Calculate and return performance metrics for the fold
+    test_target <- test_data[[target]]
+    mmetric(test_target, pred, metrics_list)
+  })
+  
+  # Generate mean and sd for each metric
+  cv_results_m <- as.matrix(do.call(cbind, cv_results))
+  cv_mean <- rowMeans(cv_results_m)
+  cv_sd <- apply(cv_results_m, 1, sd)
+  
+  # Combine and display results
+  cv_all <- cbind(cv_results_m, Mean = cv_mean, Sd = cv_sd)
+  kable(t(cv_all), digits = 2, caption = paste("Cross-Validation Results for", deparse(substitute(model_func))))
+}
+
+# Run cross-validation for each model
+cv_function(data, target, nFolds, seedVal, "MLP", metrics_list)
+cv_function(data, target, nFolds, seedVal, "ksvm", metrics_list)
+cv_function(data, target, nFolds, seedVal, "IBK", metrics_list)
+
+```
+
+
+## Task 6
+
+   - 3 fold cross-validation of MLP, ksvm and IBk models
+   
+```{r}
+## Define parameters
+df <- data
+target <- "NA_Sales"  
+nFolds <- 3
+seedVal <- 500
+metrics_list <- c("MAE", "RMSE", "MAPE", "RMSPE", "RAE", "RRSE", "R2")
+
+# Define the cross-validation function
+cv_function <- function(df, target, nFolds, seedVal, prediction_method, metrics_list) {
+  
+  set.seed(seedVal)
+  folds <- createFolds(df[[target]], nFolds, returnTrain = FALSE)
+  
+  # Perform cross-validation
+  cv_results <- lapply(folds, function(test_idx) {
+   
+    train_data <- df[-test_idx, ]
+    test_data <- df[test_idx, ]
+    
+    # Train the model using the specified method
+    prediction_model <- prediction_method(as.formula(paste(target, "~ .")), data = train_data)
+    
+    # Generate predictions on the test set
+    pred <- predict(prediction_model, newdata = test_data)
+    
+    # Calculate and return performance metrics for the fold
+    test_target <- test_data[[target]]
+    mmetric(test_target, pred, metrics_list)
+  })
+  
+  # Generate mean and sd for each metric
+  cv_results_m <- as.matrix(do.call(cbind, cv_results))
+  cv_mean <- rowMeans(cv_results_m)
+  cv_sd <- apply(cv_results_m, 1, sd)
+  
+  # Combine and display results
+  cv_all <- cbind(cv_results_m, Mean = cv_mean, Sd = cv_sd)
+  kable(t(cv_all), digits = 2, caption = paste("Cross-Validation Results for", deparse(substitute(prediction_method))))
+}
+
+# Run cross-validation for each model
+cv_function(data, target, nFolds, seedVal, "MLP", metrics_list)
+cv_function(data, target, nFolds, seedVal, "ksvm", metrics_list)
+cv_function(data, target, nFolds, seedVal, "IBK", metrics_list)
+
+```
+
+## Task 7 
+
+### Reflections
+
+ - **Using KSVM Model Performanance**
+ 
+- When adjusting parameters for the KSVM model, changes in  the kernel type and cost (C)can significantly impact performance metrics such as MAE, RMSE, MAPE, and R².
+
+ - The kernel function can influence the model's ability to capture nonlinear relationships. 
+ - The cost parameter controls the trade-off between achieving a low training error and a low testing error.  - A higher C value leads to less regularization and may over fit the training data, reducing R² and increasing the MAE and RMSE. A lower C value increases regularization, which might improve generalization but may increase the error metrics.
+ - The key reason these parameters affect model performance is that they determine how well the model generalizes to unseen data. A poor choice of kernel or cost  can lead to underfitting or overfitting, which directly impacts error metrics like MAE, RMSE, and MAPE. 
+
+  - **Using MLP Model Performance **
+  
+ - For the MLP model, adjusting hyperparameters like number of hidden layers, learning rate, and activation function can significantly affect both model performance and training speed.
+- Increasing the number of hidden layers can capture more complex relationships within the data. However, this can also lead to overfitting if the network becomes too large relative to the dataset, resulting in higher MAE and RMSE. Conversely, reducing the number of layers might underfit the model, increasing the errors.
+ - A higher learning rate can speed up training but might result in the model missing the optimal minimum, leading to higher MAE and RMSE. A smaller learning rate can make the model converge slowly but often results in a more precise fit, potentially lowering MAPE and improving accuracy.
+
+ - Increasing the number of hidden layers also increases the training time due to the increased complexity and number of computations. Similarly, a lower learning rate results in more iterations, which also increases the training time.
+ 
+   - **What I Learned from Building Each of These Models**
+   
+ -  I've learned that each model has its strengths and trade-offs depending on the problem at hand. For instance, KSVM works well for problems where non-linear boundaries are necessary, but it can be computationally expensive when scaling to large datasets. MLP can capture complex relationships but requires careful tuning of hyperparameters (like the number of hidden layers and learning rate) to prevent overfitting or underfitting, especially for large datasets. IBk, being a k-nearest neighbors model, is straightforward but can suffer from high computational costs for large datasets and requires careful selection of k to balance bias and variance.
+ 
+## Task 8 
+
+### Additional questions:
+
+1. Using IBk Model Performance Results:
+
+   - Lower k values (e.g., k=1) lead to more flexible models that fit noise, causing overfitting and potentially higher MAE and RMSE.
+  - Higher k values (e.g., k=5) lead to more general models, which can improve performance and reduce MAE and RMSE, but might miss nuances in the data.
+  - The k parameter determines how many nearest neighbors are considered. Smaller values of k increase the risk of noise affecting the prediction, while larger values can make the model too simplistic and unable to capture finer details.
+
+2. Runtime Differences:
+
+ - IBk tends to be faster than KSVM and MLP because it is a non-parametric algorithm that simply memorizes the training data and computes distances. KSVM and MLP, however, involve optimization processes that require more time to converge.
+ 
+3. Emergency Prediction Situation:
+
+  - In an emergency situation, IBk would be the fastest choice due to its simplicity and low computational requirements. However, it might trade off accuracy. MLP could be a good choice for better accuracy but would take longer to train. For rapid results, I would focus on IBk but possibly tune k for a good balance between speed and accuracy, making sure to select the best k that minimizes MAE and RMSE for the immediate prediction.
+ 
+ 
+
+

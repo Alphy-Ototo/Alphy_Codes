@@ -1,0 +1,41 @@
+---
+title: "Project Assignment"
+author: "Alphonsinah Ototo"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: true
+    toc: true
+    fig_width: 15
+    fig_height: 10
+  pdf_document:
+    toc: true
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Task 1
+
+```{r EDA }
+# Load libraries
+library(tidyverse)
+library(ggplot2)
+library(caret)
+
+# Load the dataset
+census_data <- read.csv("C:/Users/User/Downloads/census.csv")
+
+# Inspect structure and summary
+str(census_data)
+summary(census_data)
+head(census_data)
+
+# Check for missing values
+colSums(is.na(census_data))
+
+```
+

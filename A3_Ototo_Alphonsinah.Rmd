@@ -1,0 +1,279 @@
+---
+title: "Assignment 3 - Decision Tree and Naive Bayes Modeling"
+author: "Alphonsinah Ototo"
+date: "2024-10-20"
+output: 
+  html_document: 
+    toc: yes
+    number_sections: yes
+    code_folding: hide
+---
+
+## Task 1
+
+### Set up, Data import, and Preparation
+
+  a).  Package loading, and data import.  Set the working directory to the directory where your rmarkdown program file resides in rstudio using getwd() and setwd(). For example,
+
+mydir <- getwd()
+
+setwd(mydir)
+
+Now that you are familiar with the variables in the input data, feel free to load character variables as factors in read.csv(). Show the overall structure and summary of the data frame that keeps the data from the input file.
+
+```{r }
+# Load necessary libraries
+#install.packages(c("rmarkdown", "C50", "e1071", "caret", "rminer", "matrixStats", "knitr"))
+
+library(C50)
+library(e1071) 
+library(caret) 
+library(rminer) 
+library(matrixStats)
+library(knitr)
+
+# Set working directory 
+mydir <- getwd()
+setwd(mydir)
+
+# Load the data from CD_additional_modified.csv
+data <- read.csv("C:/Users/User/Downloads/CD_additional_modified.csv", stringsAsFactors = TRUE)
+```
+          
+```{r}
+# Display structure and summary of the data set
+#str(data)
+summary(data)
+```
+   b). Partition this data frame for simple hold-out evaluation – 70% for training and the other 30% for testing.
+
+```{r} 
+
+# Partition the data (70% training, 30% testing)
+set.seed(123)
+index <- createDataPartition(data$y, p=0.7, list=FALSE)
+train_data <- data[index, ]
+test_data <- data[-index, ]
+
+```
+
+
+   c). Show the distributions (in percentages) of the target variable in the whole input data frame, the train set and the test set.
+      
+```{r}
+# distribution of the target variable in percentages for full, train, and test data
+prop.table(table(data$y)) * 100
+prop.table(table(train_data$y)) * 100
+prop.table(table(test_data$y)) * 100
+```
+
+### Simple Decision Tree Training and Testing
+
+  a). Train a C5.0 model using the default setting. Show information about this model and the summary of the model. Do not plot the tree at this point because the tree might be too complex. Generate and compare this model’s confusion matrices and classification evaluation metrics in testing and training sets 
+      
+```{r}
+
+#train c5.0 model
+model_C50 <- C5.0(y ~ ., data = train_data)
+
+# Predictions on the training set
+pred_train <- predict(model_C50, train_data)
+
+# Predictions on the testing set
+pred_test <- predict(model_C50, test_data)
+
+# Confusion matrix for the training set
+train_cm <- confusionMatrix(pred_train, train_data$y)
+
+# Confusion matrix for the testing set
+test_cm <- confusionMatrix(pred_test, test_data$y)
+
+print(train_cm)
+print(test_cm)
+
+```
+
+
+  - Training Set: The model performs very well on the training data with high accuracy and sensitivity, and moderate specificity.
+  - Testing Set: The performance drops slightly on the testing set, especially in specificity, indicating some over fitting.
+   
+    b). Explore reducing the tree complexity by lowering CF levels. In the code, select a CF level of your choice to train and test another C5.0 model. Plot the tree. Generate and compare this model’s confusion matrices and classification evaluation metrics in testing and training sets
+
+
+```{r}
+
+# Reducing tree complexity by lowering confidence factor (CF)
+
+reduced_model <- C5.0(y ~ ., data = train_data, control = C5.0Control(CF = 0.01))
+
+# Plot the simplified tree
+plot(reduced_model)
+
+# Predictions on the training set
+reduced_pred_train <- predict(reduced_model, train_data)
+
+# Predictions on the testing set
+reduced_pred_test <- predict(reduced_model, test_data)
+
+# Confusion matrix for the training set
+confusionMatrix(reduced_pred_train, train_data$y)
+
+# Confusion matrix for the testing set
+confusionMatrix(reduced_pred_test, test_data$y)
+```
+  - Training Set: The reduced model still performs well, but the accuracy has slightly dropped.However, the reduced tree is simpler  and more interpretable.
+  - Testing Set: The specificity has dropped further, but this is expected when simplifying the model.
+  
+### Simple Naïve Bayes Model Training and Testing
+ 
+  a). Train a naive Bayes model using the training set from 1. Show information about this model. Generate and compare this model’s confusion matrices and classification evaluation metrics in testing and training sets
+  
+```{r}
+# Train the Naive Bayes model
+nb_model <- naiveBayes(y ~ ., data = train_data)
+
+# Predict on the training and test set
+train_pred_nb <- predict(nb_model, train_data)
+
+test_pred_nb <- predict(nb_model, test_data)
+
+# Confusion Matrix and Metrics for training and test Set
+
+train_conf_matrix_nb <- table(train_data$y, train_pred_nb)
+train_conf_matrix_nb
+
+test_conf_matrix_nb <- table(test_data$y, test_pred_nb)
+test_conf_matrix_nb
+
+# Calculate Accuracy for Training and test Set
+train_accuracy_nb <- sum(diag(train_conf_matrix_nb)) / sum(train_conf_matrix_nb)
+train_accuracy_nb
+
+test_accuracy_nb <- sum(diag(test_conf_matrix_nb)) / sum(test_conf_matrix_nb)
+test_accuracy_nb
+
+```
+   - Training Set has an Accuracy of 86.65% which is decent, but there's 266 false positives predicted as "yes"and 119 false negatives predicted as 'no'.
+
+  -  Test set has an Accuracy of 87.29% which shows that the model generalizes reasonably well on unseen data.
+  
+    b). Explore removing one predictor for building naive Bayes models for this requirement so as to exam the impact of the removal of a predictor. In the code, decide on which predictor to be removed from the data sets for training and testing another naive Bayes model that could improve the true positive rate of the “yes” class of the target variable y. Train and apply this new model.  Generate and compare this model’s confusion matrices and classification evaluation metrics in testing and training sets
+  
+```{r}
+
+# Remove the predictor 'pdays' from the training and testing data sets
+train_data_new <- train_data[ , !(names(train_data) %in% c('pdays'))]
+test_data_new <- test_data[ , !(names(test_data) %in% c('pdays'))]
+
+# Train the Naive Bayes model on the new training data set without 'pdays'
+nb_new_model <- naiveBayes(y ~ ., data = train_data_new)
+
+# Predict on the training and test sets using the new model
+train_pred_nb_new <- predict(nb_new_model, train_data_new)
+test_pred_nb_new <- predict(nb_new_model, test_data_new)
+
+# Confusion matrices for the training and testing sets
+train_conf_matrix_new <- table(train_data_new$y, train_pred_nb_new)
+test_conf_matrix_new <- table(test_data_new$y, test_pred_nb_new)
+
+# Accuracy for the training and testing sets
+train_accuracy_new <- sum(diag(train_conf_matrix_new)) / sum(train_conf_matrix_new)
+test_accuracy_new <- sum(diag(test_conf_matrix_new)) / sum(test_conf_matrix_new)
+
+# Print the confusion matrices and accuracy for the training and testing sets
+print(train_conf_matrix_new)
+print(train_accuracy_new)
+print(test_conf_matrix_new)
+print(test_accuracy_new)
+```
+
+  - The model performs similarly on both the training (83.77%) and testing sets (83.40%), showing that it's not over fitting and generalizes well. However, the overall accuracy has dropped slightly in both sets. 
+  
+  
+###  Create a Named Cross-validation Function 
+
+   - a) This function uses several arguments – a data frame, the target variable, classification algorithm, seed value, the number of folds, and a set of classification metrics (without including confusion matrix output).
+   
+   
+```{r}
+# Create the cross-validation function
+cv_function <- function(df, target_var, nFolds, seedVal, classification, metrics_list) {
+  
+  set.seed(seedVal)
+  folds = createFolds(df[, target_var], nFolds)
+  
+  cv_results <- lapply(folds, function(x) {
+    train <- df[-x, -which(colnames(df) == target_var)]
+    test  <- df[x, -which(colnames(df) == target_var)]
+    
+    train_target <- df[-x, target_var]
+    test_target <- df[x, target_var]
+    
+    classification_model <- classification(train, train_target)
+    pred <- predict(classification_model, test)
+    
+    return(mmetric(test_target, pred, c("ACC", "PRECISION", "TPR", "F1")))
+  })
+  
+  cv_results_m <- as.matrix(as.data.frame(cv_results))
+  cv_mean <- as.matrix(rowMeans(cv_results_m))
+  colnames(cv_mean) <- "Mean"
+  
+  cv_sd <- as.matrix(rowSds(cv_results_m))
+  colnames(cv_sd) <- "Sd"
+  
+  cv_all <- cbind(cv_results_m, cv_mean, cv_sd)
+  
+  kable(cv_all, digits=2)
+}
+
+```
+   
+
+### 5-fold and 10-fold C5.0 and naive Bayes evaluation performance with cv_function 
+
+  a). Use the data frame that keeps the entire set of input data to evaluate C5.0 and naive Bayes models by 5-fold as well as 10-fold cross-validation evaluations.
+    
+```{r}
+df <- data
+target_var <- "y"
+nFolds <- 5
+seedVal <- 500
+assign("classification", naiveBayes)
+metrics_list <- c("ACC","PRECISION","TPR","F1")
+
+cv_function(df, target_var, nFolds, seedVal, classification, metrics_list)
+
+# Different nFolds
+
+nFolds <- 10
+
+cv_function(df, target_var, nFolds, seedVal, classification, metrics_list)
+
+# Different classification algorithm
+
+assign("classification", C5.0)
+nFolds <- 5
+
+cv_function(df, target_var,nFolds, seedVal, classification, metrics_list)
+
+# Different nFolds
+
+nFolds <- 10
+cv_function(df, target_var,nFolds, seedVal, classification, metrics_list)
+```
+
+
+## Task II
+
+### Reflections
+  - Building and evaluating each model has provided valuable insights into their performance.The naiveBayes model, despite its simplicity, showed a strong performance with high accuracy and precision scores, particularly in identifying the primary positive class. This model’s interpretability and speed make it advantageous for real-time applications where quick decisions are necessary. However, its struggle with the second class highlights its limitations in more complex datasets, emphasizing the need for careful feature selection.
+
+ - The C5.0 algorithm demonstrated improved performance across most metrics, indicating its robustness in handling intricate patterns within the data. Adjustments in hyperparameters such as the number of trees and boosting methods allowed for enhanced flexibility and accuracy. The increase in true positive rates and precision in both classes reflects its ability to better capture the underlying data distribution, making it suitable for applications requiring a nuanced understanding of different classes.
+
+### Additional QuestionS:
+ - Model with Worse Performance: The naiveBayes model, while underperforming in classifying the secondary positive class, may be preferred in scenarios where computational efficiency and interpretability are prioritized over accuracy, such as in preliminary analyses or when the cost of false positives is low.
+
+ - Removing a Predictor: Upon removing a predictor, I observed a slight decline in model performance metrics.  I had chosen to remove 'pdays', a feature that deemed less relevant. This was to streamline the model and improve interpretability while assessing whether the removed predictor was contributing significantly to the model's predictive power.
+
+ - Comparison of CV and Train/Test Split Metrics: The metrics generated from the cross-validation (CV) function exhibited more consistent performance results across folds compared to those from the train/test split, which may have shown more variability. CV generally provides a more reliable estimate of model performance by averaging results over multiple folds, thus mitigating the risk of overfitting and ensuring better generalization to unseen data. In contrast, the train/test split may capture a specific snapshot of performance but is more susceptible to fluctuations due to random sampling. Given these observations, I would argue that cross-validation offers a more robust evaluation strategy, particularly in cases with limited data

@@ -1,0 +1,270 @@
+---
+title: "Regression models, model fit and prediction errors"
+author: "Alphonsinah Ototo"
+date: "2024-10-30"
+output: 
+  html_document:
+    number_sections: yes
+    toc: yes
+    fig_width: 15
+    fig_height: 10
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Set up, data import, data exploration, data partitioning, and inspection code
+```{r}
+install.packages( "kernlab")
+```
+
+
+```{r Set up and import data}
+# Load required packages
+library(knitr)
+library(psych)
+library(rpart)
+library(RWeka)
+library(caret)
+library(rminer)
+library(matrixStats)
+library(kernlab)
+
+# Set working directory
+mydir <- getwd()
+setwd(mydir)
+
+# Load the data set
+sales_data <- read.csv("C:/Users/User/Downloads/NA_sales_filtered.csv", stringsAsFactors = TRUE)
+
+```
+
+```{r data structure and summary}
+# Show structure and summary
+str(sales_data)
+summary(sales_data)
+```
+
+```{R}
+# Transform non-numeric fields to factors
+sales_data$Platform <- as.factor(sales_data$Platform)
+sales_data$Genre <- as.factor(sales_data$Genre)
+sales_data$Rating <- as.factor(sales_data$Rating)
+
+```
+
+```{r distribution and correlations of numeric variables}
+# Distributions and correlations of numeric variables
+pairs.panels(sales_data[, sapply(sales_data, is.numeric)], 
+             main = "Numeric Variables Distribution and Correlation")
+```
+```{r lm model}
+# Remove 'Name' column
+sales_data <- sales_data[, -which(names(sales_data) == "Name")]
+
+# Build Linear Regression Model
+lm_model <- lm(NA_Sales ~ ., data = sales_data)
+summary(lm_model)
+```
+
+
+```{r partitioning the data set}
+# Partition the data set
+set.seed(500)
+
+inTrain <- createDataPartition(y=sales_data$NA_Sales, p = 0.70, list=FALSE)
+train_target <- sales_data[inTrain,7]
+test_target <- sales_data[-inTrain,7]
+
+train_input <-  sales_data[inTrain,-7]
+test_input <-  sales_data[-inTrain,-7]
+```
+
+## lm, rpart and M5P model training and testing
+
+```{r train models}
+
+# Training the models
+lm_model <- lm(train_target~., data = train_input)
+
+rpart_model <- rpart(train_target ~ ., data = train_input)
+
+m5p_model <- M5P(train_target ~ ., data = train_input)
+
+```
+
+```{r predictions_lm_model}
+
+predictions_lm_test <- predict(lm_model, test_input)
+predictions_lm_train <- predict(lm_model, train_input)
+
+summary(predictions_lm_test)
+summary(predictions_lm_train)
+```
+```{r predictions_rpart_model}
+
+predictions_rpart_test <- predict(rpart_model, test_input)
+predictions_rpart_train <- predict(rpart_model, train_input)
+
+summary(predictions_rpart_test)
+summary(predictions_rpart_train)
+```
+```{r predictions_m5p_model}
+
+predictions_m5p_test <- predict(m5p_model, test_input)
+predictions_m5p_train <- predict(m5p_model, train_input)
+
+summary(predictions_m5p_test)
+summary(predictions_m5p_train)
+```
+```{r Generate performance metrics}
+
+# Generating performance metrics 
+
+metrics_list <- c("MAE","RMSE","MAPE","RMSPE","RAE", "RRSE", "COR", "R2")
+
+# performance of predictions on testing data
+mmetric(test_target,predictions_lm_test ,metrics_list)
+mmetric(test_target,predictions_rpart_test ,metrics_list)
+mmetric(test_target,predictions_m5p_test ,metrics_list)
+
+# performance of predictions on training data
+mmetric(train_target,predictions_lm_train,metrics_list)
+mmetric(train_target,predictions_rpart_train,metrics_list)
+mmetric(train_target,predictions_m5p_train,metrics_list)
+```
+
+## Cross-validation of lm, rpart, and M5P NA_Sales prediction models
+
+```{r cross validation using lm,rpart and M5p models}
+# Define parameters
+df <- sales_data
+target <- "NA_Sales"  
+nFolds <- 5
+seedVal <- 500
+metrics_list <- c("MAE", "RMSE", "MAPE", "RMSPE", "RAE", "RRSE", "R2")
+
+# Define the cross-validation function
+cv_function <- function(df, target, nFolds, seedVal, prediction_method, metrics_list) {
+  
+  set.seed(seedVal)
+  folds <- createFolds(df[[target]], nFolds, returnTrain = FALSE)
+  
+  # Perform cross-validation
+  cv_results <- lapply(folds, function(test_idx) {
+   
+    train_data <- df[-test_idx, ]
+    test_data <- df[test_idx, ]
+    
+    # Train the model using the specified method
+    prediction_model <- prediction_method(as.formula(paste(target, "~ .")), data = train_data)
+    
+    # Generate predictions on the test set
+    pred <- predict(prediction_model, newdata = test_data)
+    
+    # Calculate and return performance metrics for the fold
+    test_target <- test_data[[target]]
+    mmetric(test_target, pred, metrics_list)
+  })
+  
+  # Generate mean and sd for each metric
+  cv_results_m <- as.matrix(do.call(cbind, cv_results))
+  cv_mean <- rowMeans(cv_results_m)
+  cv_sd <- apply(cv_results_m, 1, sd)
+  
+  # Combine and display results
+  cv_all <- cbind(cv_results_m, Mean = cv_mean, Sd = cv_sd)
+  kable(t(cv_all), digits = 2, caption = paste("Cross-Validation Results for", deparse(substitute(prediction_method))))
+}
+
+# Run cross-validation for each model
+cv_function(df, target, nFolds, seedVal, lm, metrics_list)
+cv_function(df, target, nFolds, seedVal, rpart, metrics_list)
+cv_function(df, target, nFolds, seedVal, M5P, metrics_list)
+```
+
+## Improve the models by adding a quadratic term of Critic_Score
+
+```{r improving the model}
+# Add critic_score to the sales_data
+sales_data$Critic_Score_Squared <- sales_data$Critic_Score^2
+
+#Fit the lm model including Critic_Score_Squared
+improved_lm_model <- lm(NA_Sales ~ ., data = sales_data)
+summary(improved_lm_model)
+
+# Call the cv function for each model with the updated data (including Critic_Score_Squared)
+cv_function(sales_data, target, nFolds, seedVal, lm, metrics_list)
+cv_function(sales_data, target, nFolds, seedVal, rpart, metrics_list)
+cv_function(sales_data, target, nFolds, seedVal, M5P, metrics_list)
+
+```
+
+
+
+```{r}
+head(sales_data)
+```
+
+## Improve the models with the log term of User_Count
+
+```{r}
+
+# Remove the original 'User_Count'
+df_log_User_Count <- sales_data[, -7]
+
+# Create and add the natural log transformation of 'User_Count'
+df_log_User_Count$log_User_Count <- log(sales_data$User_Count)
+
+# Define the lm model formula 
+lm_model_log <- lm(NA_Sales ~ . - Critic_Score_Squared, data = df_log_User_Count)
+
+# Show summary of the model
+summary(lm_model_log)
+
+# Run cross-validation for the lm, rpart, and M5P models
+cv_function(df_log_User_Count, target, nFolds, seedVal, lm, metrics_list)
+cv_function(df_log_User_Count, target, nFolds, seedVal, rpart, metrics_list)
+cv_function(df_log_User_Count, target, nFolds, seedVal, M5P, metrics_list)
+```
+# Reflection
+
+  1. Recommended Predictor Removal 
+
+   - I would recommend removing PlatformXOne. In the model summary, PlatformXOne has a high p-value (0.941), indicating that it does not significantly contribute to predicting NA_Sales. Removing this variable would simplify the model without sacrificing predictive power. This is because In regression modeling, predictors with high p-values generally contribute little information and can be omitted to avoid overfitting and improve model interpretability. Additionally, because other platform variables provide significant predictive information, the impact of excluding PlatformXOne on model performance would likely be minimal.
+
+  2. Effectiveness of Log-User_Count
+   
+   - The log_ User_Count could be more  effective because it normalizes the distribution of the NA_Sales, which are likely  skewed or have high range of values. Log transformations often reduce the influence of extreme values, leading to more stable estimates and potentially higher predictive accuracy. In this case, the log_User_Count is a highly significant predictor with a strong coefficient, and the model's adjusted R-squared and prediction error metrics, such as RMSE and MAE, improved compared to using User_Count in its original form.
+       
+  3. Recommendation on Adding User_Count Quadratic Term
+
+   - I do not recommend adding a quadratic term for User_Count,the log_User_Count effectively reduces variability and aligns more closely with the linear assumptions of regression, as shown by its significance and model performance. Including a quadratic term could reintroduce unnecessary complexity without a clear need for capturing non-linear patterns, especially given that log_User_Count already achieves a meaningful, simplified representation of the predictor. 
+
+  4. Key Lessons and Model Interpretations
+      
+   - Building and tuning these models highlighted the importance of balancing complexity with interpretability. Each adjustment, such as adding log_User_Count or excluding insignificant predictors, improved model clarity and predictive power without overcomplicating it.
+   - In the linear model (lm), removing insignificant predictors and transforming variables like User_Count made the model more interpretable, with a slight increase in the adjusted R-squared value. 
+   - The decision tree model (rpart) provided flexibility in capturing non-linear relationships, though it occasionally over fitted to specific patterns in the data. 
+   - Finally, the M5P model balanced linear and non-linear structures, showing promising performance in cases where hierarchical relationships might exist. 
+   - In conclusion, each model has its strengths.Linear models for interpretability, decision trees for capturing complexity, and M5P for combining both aspects, making it critical to choose based on the specific needs of interpretability versus predictive accuracy.
+
+ **Additional Questions:**
+ 
+ 1. Why can transforming variables improve performance in the models used in this
+assignment?
+
+  - Transforming Variables helps to Improve Model Performance Transformations, like log transformations, help normalize skewed distributions and reduce the influence of outliers, enhancing model stability and interpretability. 
+ 
+ 2. Do you think an interaction term could have improved performance? Which variable
+relationships might be worth exploring?
+
+  - Yes, I think Interaction terms could improve performance by capturing variable relationships that jointly affect NA_Sales. For example, interactions between Platform and Genre could reveal platform-specific genre popularity trends that drive sales. Similarly, Critic_Score interacting with User_Score may account for the combined influence of professional reviews and user reception, potentially enhancing predictive performance.
+   
+ 3. How were factors implemented into your regressions? Is the number of coefficients the
+same as the number of levels? If not, why are they different?
+
+  - Factors in Regression Models Factors were implemented as categorical variables in the regression models, which generated one coefficient for each level of the factor minus one. This discrepancy occurred because regression uses dummy coding to prevent multicollinearity. Adding coefficients for all levels would make the predictors perfectly collinear. Thus, each factor’s effect is measured relative to a baseline level, allowing for meaningful interpretation of individual level impacts.

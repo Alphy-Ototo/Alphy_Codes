@@ -1,0 +1,224 @@
+---
+title: "Fitlife 360 Case"
+date: today
+format:
+  html:
+    toc: true
+    embed-resources: true     
+execute:
+  echo: true       
+  eval: true       
+  message: false
+  warning: false
+editor_options: 
+  chunk_output_type: inline
+---
+
+## Task 1
+ 
+  - Plot the time series data
+
+```{r}
+#install.packages("remotes", repos='http://cran.us.r-project.org')
+```
+
+```{r}
+#remotes::install_github("ebenmichael/augsynth")
+```
+
+```{r}
+#remotes::install_github("facebookincubator/GeoLift")
+```
+  
+```{r}
+# install required packages
+
+#install.packages("CausalImpact")
+
+library(tidyverse)
+library(CausalImpact)
+library(GeoLift)
+library(gt)
+
+# Read the data
+offline_marketing_data <- read.csv("https://raw.githubusercontent.com/jefftwebb/data/main/offline_marketing_360.csv")
+
+# View the data set
+head(offline_marketing_data)
+```
+
+```{r}
+# Convert the date column to Date type
+offline_marketing_data$date <- as.Date(offline_marketing_data$date)
+#Plot of the time series
+ggplot(offline_marketing_data, aes(x= date, y= downloads, group = city,col=city))+
+  geom_line() +
+  theme_minimal() +
+  labs(title = "Time series of dowbloads by city")
+```
+
+```{r}
+#| message: false
+
+offline_marketing_data |>
+  filter(city == "Denver") |>
+  ggplot(aes(date, downloads)) +
+  geom_line() +
+  geom_smooth(data = . %>% filter(date <= "2021-07-01"), method = "lm", se = F) +
+  geom_smooth(data = . %>% filter(date >= "2021-07-01"), method = "lm", se = F) +
+  theme_minimal() +
+  labs(title = "Time series of downloads in Denver ")
+       
+```
+
+
+## Task 2
+
+ - Use DiD to estimate the treatment effect in Denver.
+
+```{r}
+# Subset the data for Denver and control cities
+
+offline_marketing_data <- offline_marketing_data %>%
+  filter(city %in% c("Denver", "San Francisco", "Seattle", "Los Angeles"))
+#DiD Estimate
+did_model <-lm(downloads ~ treated * post, data = offline_marketing_data)
+
+# Extract the coefficient of the interaction term (treatment effect)
+did_estimate <- coef(did_model)["treated:post"]
+
+# Print the DiD estimate
+print(did_estimate)
+```
+
+## Task 3
+
+ - Estimate the treatment effect in Denver with CausalImpact. Do not use any covariate series for this analysis.
+ 
+```{r}
+#define responses and date
+response <- filter(offline_marketing_data, city == "Denver")$downloads
+dates <- filter(offline_marketing_data, city == "Denver")$date
+
+library(zoo) 
+
+# format the univariate time series
+data <- zoo(response, dates)
+
+#define pre and post periods
+pre <- as.Date(c("2021-07-01", "2021-07-15"))
+post <- as.Date(c("2021-07-16", "2021-08-02"))
+
+#fit the model
+impact <- CausalImpact(data, pre, post) 
+
+summary(impact)
+plot(impact)
+
+```
+
+## Task 4
+
+ - Estimate treatment effect in Denver with CausalImpact using downloads from the control cities—San Francisco, Seattle and Los Angeles—as covariate time series. How does the estimate change?
+ 
+```{r}
+# Convert date to Date type
+offline_marketing_data$date <- as.Date(offline_marketing_data$date)
+
+# Filter data for Denver and the control cities 
+denver <- offline_marketing_data %>% filter(city == "Denver") %>% select(date, downloads)
+sf <- offline_marketing_data%>% filter(city == "San Francisco") %>% select(date, downloads)
+seattle <- offline_marketing_data%>% filter(city == "Seattle") %>% select(date, downloads)
+la <- offline_marketing_data %>% filter(city == "Los Angeles") %>% select(date, downloads)
+
+# Merge the data sets into one time series
+time_series <- denver %>%
+  left_join(sf, by = "date", suffix = c("_denver", "_sf")) %>%
+  left_join(seattle, by = "date") %>%
+  left_join(la, by = "date")
+
+# Rename the columns
+colnames(time_series) <- c("date", "downloads_denver", "downloads_sf", "downloads_seattle", "downloads_la")
+
+# Set the time_series as time series object with the date as the index
+time_series_ts <- zoo::zoo(time_series[,-1], order.by = time_series$date)
+
+# Define the pre and post period 
+pre_period <- as.Date(c("2021-07-01", "2021-07-15"))
+post_period <- as.Date(c("2021-07-16", "2021-08-1"))
+
+# Run the CausalImpact analysis using covariates 
+impact_with_covariates <- CausalImpact(time_series_ts, pre_period, post_period)
+
+# Print summary of the impact
+summary(impact_with_covariates)
+
+# Plot the results
+plot(impact_with_covariates)
+
+```
+
+
+ - The estimate of the treatment effect is 4.3 which is close to the Did Estimate.The divergence of the counter factual is also very defined.
+ 
+## Task 5
+
+ - Fit a GeoLift model (using the GeoLift() function) and output the model summary. How does the results differ from those obtained with CausalImpact?
+
+```{r}
+library(GeoLift)
+library(gt)
+library(dplyr)
+
+# Convert the date column is of Date type
+offline_marketing_data$date <- as.Date(offline_marketing_data$date)
+
+# Filter the data for the cities of interest 
+geo_data <- offline_marketing_data %>%
+  filter(city %in% c("Denver", "San Francisco", "Seattle", "Los Angeles")) %>%
+  select(date, city, downloads, treated)
+
+# Convert the city variable to factor
+geo_data$city <- as.factor(geo_data$city)
+
+# Define the pre-treatment and post-treatment periods
+pre_period <- as.Date(c("2021-07-01", "2021-07-15"))
+treatment_period <- as.Date(c("2021-07-16", "2021-08-01"))
+
+# Prepare the data using GeoDataRead
+geo_data_prep <- GeoDataRead(
+  data = geo_data,            
+  date_id = "date",           
+  location_id = "city",       
+  Y_id = "downloads",
+  X = c(),
+  format = "yyyy-mm-dd",     
+  summary = TRUE) 
+```
+
+## Task 6
+- Plot the GeoLift model.
+
+
+```{r}
+# Create a numeric representation of the date 
+geo_data$time_numeric <- as.numeric(geo_data$date)
+
+# Then use GeoPlot with the numeric date
+GeoPlot( data = geo_data,
+        Y_id = "downloads",
+        time_id = "time_numeric",
+        location_id = "city")
+```
+
+
+#Task 7
+
+- Write up the results for FitLife’s single city offline marketing intervention.
+
+   - The objective of this case was to assess the impact of the marketing efforts on downloads of FitLife's services and to determine whether the intervention led to a statistically significant increase in user engagement
+   - The DiD analysis indicated a positive treatment effect, suggesting that the downloads in Denver showed a significant increase compared to the control cities during the treatment period. The estimated treatment effect was statistically significant, providing preliminary evidence that the offline marketing strategies were effective.
+   - Without using covariates, the CausalImpact analysis estimated a noticeable uplift in downloads during the treatment period compared to the pre-treatment period.
+   - When incorporating downloads from control cities as covariates, the treatment effect was refined, providing a more robust estimate of the intervention's impact.
+   - The GeoLift analysis confirmed the positive impact of the marketing intervention.
+  
